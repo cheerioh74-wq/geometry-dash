@@ -58,9 +58,11 @@ let gameState   = 'start'; // start | playing | dead
 let gameMode    = 'cube';  // cube | ship | ball
 let holding     = false;
 let ballGravDir = 1;       // 1 = down, -1 = up (ball mode)
-let themeSection = -1;
-let displayHue   = 270;    // current animated hue
-let targetHue    = 270;
+let themeSection  = -1;
+let displayHue    = 270;    // current animated hue
+let targetHue     = 270;
+let sectionFlash  = 0;
+let prevOnGround  = true;
 let score       = 0;
 let bestScore   = parseInt(localStorage.getItem('gdBest') || '0');
 let attempts    = 0;
@@ -298,9 +300,11 @@ function startGame() {
   gameMode     = 'cube';
   holding      = false;
   ballGravDir  = 1;
-  themeSection = -1;
-  displayHue   = 270;
-  targetHue    = 270;
+  themeSection  = -1;
+  displayHue    = 270;
+  targetHue     = 270;
+  sectionFlash  = 0;
+  prevOnGround  = true;
   gameState    = 'playing';
 }
 
@@ -433,6 +437,7 @@ function update() {
   if (sec !== themeSection) {
     themeSection = sec;
     targetHue = (270 + themeSection * 90) % 360;
+    if (themeSection > 0) sectionFlash = 90;
   }
   const hueDiff = ((targetHue - displayHue + 540) % 360) - 180;
   displayHue = (displayHue + hueDiff * 0.015 + 360) % 360;
@@ -472,6 +477,10 @@ function update() {
     }
     cube.rotation += speed * 0.04;
   }
+
+  // ── Landing-Effekt ──
+  if (!prevOnGround && cube.onGround) spawnLandingParticles();
+  prevOnGround = cube.onGround;
 
   // ── Spawn obstacles ──
   spawnTimer++;
@@ -982,6 +991,22 @@ function render(t) {
   ctx.restore(); // Shake endet hier – HUD bleibt stabil
 
   drawHUD();
+
+  // ── Section Flash ──
+  if (sectionFlash > 0) {
+    const prog = sectionFlash / 90;
+    ctx.save();
+    ctx.fillStyle = `hsla(${targetHue},90%,70%,${prog * 0.28})`;
+    ctx.fillRect(0, 0, W, H);
+    if (sectionFlash > 35) {
+      ctx.globalAlpha = Math.min(1, (sectionFlash - 35) / 18);
+      glowText(`SECTION  ${themeSection + 1}`, W/2, H/2 - 10, 30,
+        `hsla(${targetHue},100%,92%,1)`, `hsla(${targetHue},100%,65%,1)`, 20);
+    }
+    ctx.restore();
+    sectionFlash--;
+  }
+
   if (gameState==='start') drawStartScreen(t);
   if (gameState==='dead')  drawDeadScreen(t);
 }
@@ -995,6 +1020,23 @@ function spawnCoinParticles(x, y) {
       x, y,
       vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd - 1,
       life: 1.0, decay: 0.06, size: Math.random() * 4 + 2, hue: 45,
+    });
+  }
+}
+
+function spawnLandingParticles() {
+  const cx = cube.x + CUBE_SIZE / 2;
+  for (let i = 0; i < 10; i++) {
+    const side = i % 2 === 0 ? 1 : -1;
+    particles.push({
+      x: cx + (Math.random() - 0.5) * CUBE_SIZE,
+      y: GROUND_Y,
+      vx: side * (Math.random() * 3 + 0.5),
+      vy: -(Math.random() * 2.5 + 0.3),
+      life: 1.0,
+      decay: 0.055 + Math.random() * 0.04,
+      size: Math.random() * 4 + 1.5,
+      hue: (displayHue + 20) % 360,
     });
   }
 }
