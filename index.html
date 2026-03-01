@@ -51,6 +51,7 @@ const BASE_SPEED  = 6.5;   // world scroll speed (px/frame)
 let gameState = 'start'; // start | playing | dead
 let score     = 0;
 let bestScore = parseInt(localStorage.getItem('gdBest') || '0');
+let attempts  = 0;
 let speed     = BASE_SPEED;
 let worldX    = 0;        // how far the world has scrolled
 
@@ -200,6 +201,7 @@ canvas.addEventListener('touchstart', e => { e.preventDefault(); tryJump(); }, {
 //  GAME FLOW
 // ─────────────────────────────────────────────
 function startGame() {
+  attempts++;
   resetCube();
   obstacles   = [];
   particles   = [];
@@ -516,11 +518,12 @@ function drawHUD() {
   ctx.fillText(`BEST ${bestScore.toString().padStart(5,'0')}`, W-24, 46);
   ctx.restore();
 
-  // Speed indicator
+  // Attempt counter
   ctx.save();
-  ctx.font=`8px ${FONT}`; ctx.textAlign='left'; ctx.textBaseline='top';
-  ctx.fillStyle='rgba(120,80,200,0.4)';
-  ctx.fillText(`SPEED ${speed.toFixed(1)}`, 20, 20);
+  ctx.font=`bold 11px ${FONT}`; ctx.textAlign='left'; ctx.textBaseline='top';
+  ctx.shadowColor='rgba(140,80,255,0.8)'; ctx.shadowBlur=8;
+  ctx.fillStyle='rgba(180,150,255,0.65)';
+  ctx.fillText(`ATTEMPT  ${attempts}`, 20, 20);
   ctx.restore();
 }
 
