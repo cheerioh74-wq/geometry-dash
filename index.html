@@ -39,21 +39,28 @@ const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0
 //  CONSTANTS
 // ─────────────────────────────────────────────
 const GROUND_Y    = 520;   // y-position of the ground surface
+const CEILING_Y   = 60;    // top boundary in ship mode
 const CUBE_SIZE   = 40;
 const CUBE_X      = 200;   // cube stays at fixed x
 const GRAVITY     = 0.72;
 const JUMP_FORCE  = -15.5;
 const BASE_SPEED  = 6.5;   // world scroll speed (px/frame)
+const SHIP_GRAVITY = 0.28;
+const SHIP_THRUST  = -0.95;
+const SHIP_MAX_VY  = 9;
 
 // ─────────────────────────────────────────────
 //  GAME STATE
 // ─────────────────────────────────────────────
-let gameState = 'start'; // start | playing | dead
-let score     = 0;
-let bestScore = parseInt(localStorage.getItem('gdBest') || '0');
-let attempts  = 0;
-let speed     = BASE_SPEED;
-let worldX    = 0;        // how far the world has scrolled
+let gameState   = 'start'; // start | playing | dead
+let gameMode    = 'cube';  // cube | ship
+let holding     = false;
+let score       = 0;
+let bestScore   = parseInt(localStorage.getItem('gdBest') || '0');
+let attempts    = 0;
+let speed       = BASE_SPEED;
+let worldX      = 0;        // how far the world has scrolled
+let portalTimer = 0;
 
 // ── Cube ──
 const cube = {
@@ -179,10 +186,9 @@ function playDeathSound() {
 // ─────────────────────────────────────────────
 //  INPUT
 // ─────────────────────────────────────────────
-function tryJump() {
-  if (gameState === 'dead')  { startGame(); return; }
-  if (gameState === 'start') { startGame(); return; }
-  if (cube.onGround) {
+function tryAction() {
+  if (gameState === 'dead' || gameState === 'start') { startGame(); return; }
+  if (gameMode === 'cube' && cube.onGround) {
     cube.vy = JUMP_FORCE;
     cube.onGround = false;
     playJumpSound();
@@ -191,11 +197,15 @@ function tryJump() {
 
 document.addEventListener('keydown', e => {
   if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
-    e.preventDefault(); tryJump();
+    e.preventDefault(); holding = true; tryAction();
   }
 });
-canvas.addEventListener('click',      () => tryJump());
-canvas.addEventListener('touchstart', e => { e.preventDefault(); tryJump(); }, { passive:false });
+document.addEventListener('keyup', e => {
+  if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') holding = false;
+});
+canvas.addEventListener('click',      () => tryAction());
+canvas.addEventListener('touchstart', e => { e.preventDefault(); holding = true;  tryAction(); }, { passive:false });
+canvas.addEventListener('touchend',   e => { e.preventDefault(); holding = false; }, { passive:false });
 
 // ─────────────────────────────────────────────
 //  GAME FLOW
@@ -203,14 +213,17 @@ canvas.addEventListener('touchstart', e => { e.preventDefault(); tryJump(); }, {
 function startGame() {
   attempts++;
   resetCube();
-  obstacles   = [];
-  particles   = [];
-  spawnTimer  = 0;
+  obstacles    = [];
+  particles    = [];
+  spawnTimer   = 0;
+  portalTimer  = 0;
   spawnInterval = 80;
-  speed       = BASE_SPEED;
-  worldX      = 0;
-  score       = 0;
-  gameState   = 'playing';
+  speed        = BASE_SPEED;
+  worldX       = 0;
+  score        = 0;
+  gameMode     = 'cube';
+  holding      = false;
+  gameState    = 'playing';
 }
 
 function spawnParticles() {
@@ -268,6 +281,16 @@ function checkCollisions() {
   const cy2 = cube.y + CUBE_SIZE - INSET;
 
   for (const ob of obstacles) {
+    // Portal → Modus wechseln, kein Tod
+    if (ob.type === 'portal') {
+      if (!ob.triggered && cube.x + CUBE_SIZE / 2 >= ob.x + ob.w / 2) {
+        ob.triggered = true;
+        gameMode = ob.targetMode;
+        if (gameMode === 'cube') cube.vy = Math.min(cube.vy, 2);
+      }
+      continue;
+    }
+
     if (ob.type === 'spike') {
       // Spike-Dreieck: Ecken (links-unten, Spitze, rechts-unten)
       const ax = ob.x,           ay = GROUND_Y;
@@ -307,21 +330,28 @@ function update() {
   speed = BASE_SPEED + Math.floor(score / 300) * 0.4;
   spawnInterval = Math.max(50, 80 - Math.floor(score / 200) * 3);
 
-  // ── Cube physics ──
-  cube.vy += GRAVITY;
-  cube.y  += cube.vy;
-
-  // Ground collision
-  if (cube.y >= GROUND_Y - CUBE_SIZE) {
-    cube.y  = GROUND_Y - CUBE_SIZE;
-    cube.vy = 0;
-    cube.onGround = true;
-  } else {
+  // ── Physics (mode-dependent) ──
+  if (gameMode === 'ship') {
+    if (holding) cube.vy += SHIP_THRUST;
+    cube.vy += SHIP_GRAVITY;
+    cube.vy  = Math.max(-SHIP_MAX_VY, Math.min(SHIP_MAX_VY, cube.vy));
+    cube.y  += cube.vy;
+    cube.rotation = Math.max(-0.5, Math.min(0.5, cube.vy * 0.055));
     cube.onGround = false;
+    if (cube.y < CEILING_Y)              { cube.y = CEILING_Y;              dieCube(); return; }
+    if (cube.y >= GROUND_Y - CUBE_SIZE)  { cube.y = GROUND_Y - CUBE_SIZE;   dieCube(); return; }
+  } else {
+    cube.vy += GRAVITY;
+    cube.y  += cube.vy;
+    if (cube.y >= GROUND_Y - CUBE_SIZE) {
+      cube.y  = GROUND_Y - CUBE_SIZE;
+      cube.vy = 0;
+      cube.onGround = true;
+    } else {
+      cube.onGround = false;
+    }
+    cube.rotation += speed * 0.04;
   }
-
-  // Cube rotation (spins while in air)
-  cube.rotation += speed * 0.04;
 
   // ── Spawn obstacles ──
   spawnTimer++;
@@ -330,10 +360,18 @@ function update() {
     spawnTimer = 0;
   }
 
+  // ── Spawn portals (alle ~10 Sek.) ──
+  portalTimer++;
+  if (portalTimer >= 600) {
+    const targetMode = gameMode === 'cube' ? 'ship' : 'cube';
+    obstacles.push({ type:'portal', x:W+60, w:24, targetMode, triggered:false });
+    portalTimer = 0;
+  }
+
   // ── Move + cull obstacles ──
   for (let i = obstacles.length-1; i >= 0; i--) {
     obstacles[i].x -= speed;
-    if (obstacles[i].x + obstacles[i].w < -20) obstacles.splice(i, 1);
+    if (obstacles[i].x + (obstacles[i].w ?? 0) < -20) obstacles.splice(i, 1);
   }
 
   // ── Collision check ──
@@ -392,6 +430,16 @@ function drawBackground() {
     ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
   }
   ctx.restore();
+
+  // Deckenline im Ship-Modus
+  if (gameMode === 'ship') {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0,255,200,0.55)';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = 'rgba(0,255,200,1)'; ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.moveTo(0, CEILING_Y); ctx.lineTo(W, CEILING_Y); ctx.stroke();
+    ctx.restore();
+  }
 }
 
 // ── Ground ──
@@ -455,6 +503,63 @@ function drawCube() {
   ctx.moveTo(0, -CUBE_SIZE/2+8); ctx.lineTo(0, CUBE_SIZE/2-8);
   ctx.stroke();
 
+  ctx.restore();
+}
+
+// ── Ship ──
+function drawShip() {
+  const cx = cube.x + CUBE_SIZE / 2;
+  const cy = cube.y + CUBE_SIZE / 2;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(cube.rotation);
+
+  // Engine-Glut (hinten)
+  ctx.beginPath(); ctx.arc(-18, 0, 6, 0, Math.PI*2);
+  ctx.fillStyle='rgba(255,160,30,0.9)'; ctx.shadowColor='rgba(255,120,0,1)'; ctx.shadowBlur=16; ctx.fill();
+
+  // Rumpf
+  ctx.beginPath();
+  ctx.moveTo( 22,  0);   // Nase
+  ctx.lineTo(  4,-10);   // oben-mitte
+  ctx.lineTo(-16,-10);   // oben-hinten
+  ctx.lineTo(-20,  0);   // Heck
+  ctx.lineTo(-16, 10);   // unten-hinten
+  ctx.lineTo(  4, 10);   // unten-mitte
+  ctx.closePath();
+  const sg = ctx.createLinearGradient(-20,-10,22,10);
+  sg.addColorStop(0,'rgba(0,200,160,0.9)'); sg.addColorStop(1,'rgba(0,100,80,0.9)');
+  ctx.fillStyle=sg; ctx.shadowColor='rgba(0,255,200,1)'; ctx.shadowBlur=20; ctx.fill();
+  ctx.strokeStyle='rgba(80,255,210,1)'; ctx.lineWidth=1.5; ctx.shadowBlur=0; ctx.stroke();
+
+  // Flügel oben
+  ctx.beginPath(); ctx.moveTo(-2,-10); ctx.lineTo(-10,-22); ctx.lineTo(-16,-10); ctx.closePath();
+  ctx.fillStyle='rgba(0,180,140,0.85)'; ctx.shadowColor='rgba(0,255,200,0.7)'; ctx.shadowBlur=8; ctx.fill();
+  ctx.strokeStyle='rgba(80,255,210,0.7)'; ctx.lineWidth=1; ctx.stroke();
+
+  // Flügel unten
+  ctx.beginPath(); ctx.moveTo(-2,10); ctx.lineTo(-10,22); ctx.lineTo(-16,10); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+
+  ctx.restore();
+}
+
+// ── Portal ──
+function drawPortal(ob) {
+  const isShip = ob.targetMode === 'ship';
+  const hue    = isShip ? 160 : 270;
+  const cx     = ob.x + ob.w / 2;
+  const h      = GROUND_Y - CEILING_Y;
+  ctx.save();
+  const grad = ctx.createLinearGradient(ob.x, 0, ob.x + ob.w, 0);
+  grad.addColorStop(0,   `hsla(${hue},100%,65%,0)`);
+  grad.addColorStop(0.5, `hsla(${hue},100%,65%,0.6)`);
+  grad.addColorStop(1,   `hsla(${hue},100%,65%,0)`);
+  ctx.fillStyle=grad; ctx.shadowColor=`hsla(${hue},100%,65%,1)`; ctx.shadowBlur=28;
+  ctx.fillRect(ob.x, CEILING_Y, ob.w, h);
+  ctx.font=`bold 9px ${FONT}`; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle=`hsla(${hue},100%,85%,0.9)`; ctx.shadowBlur=8;
+  ctx.fillText(isShip ? 'SHIP' : 'CUBE', cx, CEILING_Y + h / 2);
   ctx.restore();
 }
 
@@ -577,14 +682,15 @@ function drawDeadScreen(t) {
 function render(t) {
   drawBackground();
 
-  // Obstacles
+  // Obstacles + Portale
   obstacles.forEach(ob => {
-    if (ob.type==='spike') drawSpike(ob);
-    else                   drawBlock(ob);
+    if      (ob.type==='spike')  drawSpike(ob);
+    else if (ob.type==='block')  drawBlock(ob);
+    else if (ob.type==='portal') drawPortal(ob);
   });
 
-  // Cube (always drawn on start screen too, just standing still)
-  drawCube();
+  // Spieler (Cube oder Ship)
+  if (gameMode === 'ship') drawShip(); else drawCube();
 
   drawGround();
   drawParticles();
