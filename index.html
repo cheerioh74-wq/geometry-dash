@@ -86,6 +86,14 @@ let spawnInterval = 80; // frames between obstacle groups
 // ── Particles ──
 let particles = [];
 
+// ── Trail ──
+let trail = [];
+
+// ── Screen Shake ──
+let shakeFrames = 0;
+const SHAKE_DURATION  = 18;
+const SHAKE_MAGNITUDE = 7;
+
 // ── Background elements ──
 let bgLines = [];      // decorative grid lines
 let bgStars = Array.from({length:100}, () => ({
@@ -215,6 +223,7 @@ function startGame() {
   resetCube();
   obstacles    = [];
   particles    = [];
+  trail        = [];
   spawnTimer   = 0;
   portalTimer  = 0;
   spawnInterval = 80;
@@ -254,6 +263,7 @@ function dieCube() {
   }
   spawnParticles();
   playDeathSound();
+  shakeFrames = SHAKE_DURATION;
   gameState = 'dead';
 }
 
@@ -376,6 +386,17 @@ function update() {
 
   // ── Collision check ──
   checkCollisions();
+}
+
+function updateTrail() {
+  if (gameState === 'playing') {
+    trail.push({ x: cube.x, y: cube.y, rotation: cube.rotation, life: 1.0, mode: gameMode });
+    if (trail.length > 14) trail.shift();
+  }
+  for (let i = trail.length - 1; i >= 0; i--) {
+    trail[i].life -= 0.09;
+    if (trail[i].life <= 0) trail.splice(i, 1);
+  }
 }
 
 function updateParticles() {
@@ -680,6 +701,13 @@ function drawDeadScreen(t) {
 //  RENDER
 // ─────────────────────────────────────────────
 function render(t) {
+  ctx.save();
+  if (shakeFrames > 0) {
+    const mag = (shakeFrames / SHAKE_DURATION) * SHAKE_MAGNITUDE;
+    ctx.translate((Math.random() - 0.5) * mag * 2, (Math.random() - 0.5) * mag * 2);
+    shakeFrames--;
+  }
+
   drawBackground();
 
   // Obstacles + Portale
@@ -689,15 +717,36 @@ function render(t) {
     else if (ob.type==='portal') drawPortal(ob);
   });
 
+  drawTrail();
+
   // Spieler (Cube oder Ship)
   if (gameMode === 'ship') drawShip(); else drawCube();
 
   drawGround();
   drawParticles();
-  drawHUD();
+  ctx.restore(); // Shake endet hier – HUD bleibt stabil
 
+  drawHUD();
   if (gameState==='start') drawStartScreen(t);
   if (gameState==='dead')  drawDeadScreen(t);
+}
+
+// ── Trail ──
+function drawTrail() {
+  trail.forEach(t => {
+    const alpha = t.life * 0.45;
+    const isShip = t.mode === 'ship';
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(t.x + CUBE_SIZE / 2, t.y + CUBE_SIZE / 2);
+    ctx.rotate(t.rotation);
+    ctx.shadowColor = isShip ? 'rgba(0,255,200,0.9)' : 'rgba(100,200,255,0.9)';
+    ctx.shadowBlur  = 12;
+    ctx.strokeStyle = isShip ? 'rgba(0,220,170,1)' : 'rgba(80,180,255,1)';
+    ctx.lineWidth   = 1.5;
+    ctx.strokeRect(-CUBE_SIZE / 2, -CUBE_SIZE / 2, CUBE_SIZE, CUBE_SIZE);
+    ctx.restore();
+  });
 }
 
 // ── Particles ──
@@ -716,7 +765,7 @@ function drawParticles() {
 // ─────────────────────────────────────────────
 //  GAME LOOP
 // ─────────────────────────────────────────────
-function loop(ts) { update(); updateParticles(); render(ts * 0.001); requestAnimationFrame(loop); }
+function loop(ts) { update(); updateParticles(); updateTrail(); render(ts * 0.001); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
 
 </script>
