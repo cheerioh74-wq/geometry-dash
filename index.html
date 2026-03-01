@@ -72,10 +72,11 @@ const cube = {
 };
 
 function resetCube() {
-  cube.y  = GROUND_Y - CUBE_SIZE;
-  cube.vy = 0;
-  cube.rotation = 0;
-  cube.onGround = true;
+  cube.y           = GROUND_Y - CUBE_SIZE;
+  cube.vy          = 0;
+  cube.rotation    = 0;
+  cube.onGround    = true;
+  cube.canDoubleJump = true;
 }
 
 // ── Obstacles ──
@@ -217,10 +218,17 @@ function playCoinSound() {
 // ─────────────────────────────────────────────
 function tryAction() {
   if (gameState === 'dead' || gameState === 'start') { startGame(); return; }
-  if (gameMode === 'cube' && cube.onGround) {
-    cube.vy = JUMP_FORCE;
-    cube.onGround = false;
-    playJumpSound();
+  if (gameMode === 'cube') {
+    if (cube.onGround) {
+      cube.vy = JUMP_FORCE;
+      cube.onGround = false;
+      cube.canDoubleJump = true;
+      playJumpSound();
+    } else if (cube.canDoubleJump) {
+      cube.vy = JUMP_FORCE * 0.85;
+      cube.canDoubleJump = false;
+      playJumpSound();
+    }
   }
 }
 
@@ -378,9 +386,10 @@ function update() {
     cube.vy += GRAVITY;
     cube.y  += cube.vy;
     if (cube.y >= GROUND_Y - CUBE_SIZE) {
-      cube.y  = GROUND_Y - CUBE_SIZE;
-      cube.vy = 0;
-      cube.onGround = true;
+      cube.y             = GROUND_Y - CUBE_SIZE;
+      cube.vy            = 0;
+      cube.onGround      = true;
+      cube.canDoubleJump = true;
     } else {
       cube.onGround = false;
     }
