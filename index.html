@@ -244,6 +244,90 @@ function playCoinSound() {
 }
 
 // ─────────────────────────────────────────────
+//  MUSIC
+// ─────────────────────────────────────────────
+const MUSIC_BPM  = 138;
+const STEP_DUR   = (60 / MUSIC_BPM) / 4;  // 16th note
+const SCHED_MS   = 25;
+const SCHED_AHD  = 0.12;
+
+let musicActive  = false;
+let musicStep    = 0;
+let nextStepTime = 0;
+let musicTimer   = null;
+
+//  16-step patterns  (A minor, 138 BPM)
+//  Lead: 16th-note arpeggio melody
+const M_LEAD  = [440,0,523,659, 880,0,659,0, 587,0,698,880, 659,523,440,0];
+//  Bass: quarter-note root notes
+const M_BASS  = [110,0,0,0,      82,0,0,0,   131,0,0,0,      98,0,0,0 ];
+//  Drums
+const M_KICK  = [1,0,0,0,         1,0,0,0,     1,0,0,0,        1,0,0,0];
+const M_SNARE = [0,0,0,0,         1,0,0,0,     0,0,0,0,        1,0,0,0];
+const M_HIHAT = [1,0,1,0,         1,0,1,0,     1,0,1,0,        1,0,1,0];
+
+function mKick(t) {
+  const ac=getAudio(), o=ac.createOscillator(), g=ac.createGain();
+  o.connect(g); g.connect(ac.destination);
+  o.frequency.setValueAtTime(160,t); o.frequency.exponentialRampToValueAtTime(38,t+0.07);
+  g.gain.setValueAtTime(0.55,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.14);
+  o.start(t); o.stop(t+0.14);
+}
+function mSnare(t) {
+  const ac=getAudio(), len=Math.floor(ac.sampleRate*0.1);
+  const buf=ac.createBuffer(1,len,ac.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*(1-i/len);
+  const src=ac.createBufferSource(); src.buffer=buf;
+  const f=ac.createBiquadFilter(); f.type='highpass'; f.frequency.value=1200;
+  const g=ac.createGain(); g.gain.setValueAtTime(0.26,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.1);
+  src.connect(f); f.connect(g); g.connect(ac.destination); src.start(t);
+}
+function mHihat(t) {
+  const ac=getAudio(), len=Math.floor(ac.sampleRate*0.022);
+  const buf=ac.createBuffer(1,len,ac.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i]=Math.random()*2-1;
+  const src=ac.createBufferSource(); src.buffer=buf;
+  const f=ac.createBiquadFilter(); f.type='highpass'; f.frequency.value=8000;
+  const g=ac.createGain(); g.gain.setValueAtTime(0.09,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.022);
+  src.connect(f); f.connect(g); g.connect(ac.destination); src.start(t);
+}
+function mTone(freq, t, dur, type, vol) {
+  if (!freq) return;
+  const ac=getAudio(), o=ac.createOscillator(), g=ac.createGain();
+  o.connect(g); g.connect(ac.destination);
+  o.type=type; o.frequency.setValueAtTime(freq,t);
+  g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+  o.start(t); o.stop(t+dur+0.01);
+}
+function schedStep(s, t) {
+  if (M_KICK[s])  mKick(t);
+  if (M_SNARE[s]) mSnare(t);
+  if (M_HIHAT[s]) mHihat(t);
+  mTone(M_LEAD[s], t, STEP_DUR*0.82, 'square',   0.045);
+  mTone(M_BASS[s], t, STEP_DUR*3.7,  'sawtooth', 0.07);
+}
+function musicTick() {
+  if (!musicActive) return;
+  const ac = getAudio();
+  while (nextStepTime < ac.currentTime + SCHED_AHD) {
+    schedStep(musicStep, nextStepTime);
+    musicStep    = (musicStep + 1) % 16;
+    nextStepTime += STEP_DUR;
+  }
+}
+function startMusic() {
+  stopMusic();
+  musicActive  = true;
+  musicStep    = 0;
+  nextStepTime = getAudio().currentTime + 0.05;
+  musicTimer   = setInterval(musicTick, SCHED_MS);
+}
+function stopMusic() {
+  musicActive = false;
+  if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+}
+
+// ─────────────────────────────────────────────
 //  INPUT
 // ─────────────────────────────────────────────
 function tryAction() {
@@ -306,6 +390,7 @@ function startGame() {
   sectionFlash  = 0;
   prevOnGround  = true;
   gameState    = 'playing';
+  startMusic();
 }
 
 function spawnParticles() {
@@ -337,6 +422,7 @@ function dieCube() {
   spawnParticles();
   playDeathSound();
   shakeFrames = SHAKE_DURATION;
+  stopMusic();
   gameState = 'dead';
 }
 
