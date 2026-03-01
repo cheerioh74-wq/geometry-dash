@@ -818,21 +818,63 @@ function spawnCoinParticles(x, y) {
   }
 }
 
+function coinStar(outerR, innerR, spikes = 5) {
+  let rot = -Math.PI / 2;
+  const step = Math.PI / spikes;
+  ctx.beginPath();
+  for (let i = 0; i < spikes * 2; i++) {
+    const r = i % 2 === 0 ? outerR : innerR;
+    ctx.lineTo(Math.cos(rot) * r, Math.sin(rot) * r);
+    rot += step;
+  }
+  ctx.closePath();
+}
+
 function drawCoins(t) {
   coins.forEach(c => {
-    const pulse = 0.85 + 0.15 * Math.sin(t * 4 + c.phase);
-    const r     = COIN_R * pulse;
+    // 3-D Dreh-Effekt: X-Achse zusammenquetschen
+    const spinX = Math.abs(Math.cos(t * 2.5 + c.phase));
+    const bob   = Math.sin(t * 3 + c.phase) * 3; // leichtes Schweben
+    const r     = COIN_R;
+
     ctx.save();
-    ctx.translate(c.x, c.y);
-    ctx.rotate(t * 1.8 + c.phase);
-    ctx.shadowColor = 'rgba(255,210,0,1)'; ctx.shadowBlur = 16 * pulse;
-    const cg = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
-    cg.addColorStop(0, 'rgba(255,245,120,1)');
-    cg.addColorStop(1, 'rgba(210,140,0,1)');
-    ctx.fillStyle = cg;
-    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,180,0.55)'; ctx.lineWidth = 1.5; ctx.shadowBlur = 0;
-    ctx.beginPath(); ctx.arc(0, 0, r * 0.55, 0, Math.PI * 2); ctx.stroke();
+    ctx.translate(c.x, c.y + bob);
+    ctx.scale(Math.max(spinX, 0.06), 1);
+
+    // Glow
+    ctx.shadowColor = 'rgba(255,195,0,1)';
+    ctx.shadowBlur  = 18;
+
+    // Äußerer Rand (dunkelgold)
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#b8860b'; ctx.fill();
+
+    // Hauptfläche – Radial-Gradient off-center für Tiefenwirkung
+    const fg = ctx.createRadialGradient(-r * 0.28, -r * 0.32, r * 0.04, 0, 0, r * 0.92);
+    fg.addColorStop(0,    '#fffaaa');
+    fg.addColorStop(0.3,  '#ffd700');
+    fg.addColorStop(0.75, '#daa520');
+    fg.addColorStop(1,    '#b8860b');
+    ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.86, 0, Math.PI * 2);
+    ctx.fillStyle = fg; ctx.fill();
+
+    // Geränderte Kante (gestrichelt)
+    ctx.setLineDash([2, 2.5]);
+    ctx.strokeStyle = 'rgba(160,110,0,0.55)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.93, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Stern-Symbol
+    coinStar(r * 0.48, r * 0.21);
+    ctx.fillStyle = 'rgba(155,105,0,0.6)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,225,80,0.35)'; ctx.lineWidth = 0.5; ctx.stroke();
+
+    // Glanzfleck oben-links
+    ctx.beginPath();
+    ctx.ellipse(-r * 0.24, -r * 0.3, r * 0.27, r * 0.14, -0.5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,230,0.38)'; ctx.fill();
+
     ctx.restore();
   });
 }
